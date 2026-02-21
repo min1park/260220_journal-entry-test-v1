@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>저널엔트리 테스트 자동화</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- 외부 라이브러리: SheetJS(엑셀 읽기/쓰기), Chart.js(시각화) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- 헤더 -->
+<!-- ═══════════════════════════════════════════════════ -->
+<header class="app-header">
+    <h1>📊 저널엔트리 테스트 자동화</h1>
+    <p class="subtitle">Journal Entry Testing Automation — 모든 처리는 브라우저에서만 수행됩니다. 데이터가 서버로 전송되지 않습니다.</p>
+</header>
+
+<div class="app-container">
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- 사이드바: 진행 단계 -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <aside class="sidebar">
+        <h3>📋 진행 단계</h3>
+        <ul class="step-list">
+            <li id="step-indicator-1" class="step-item active">① 분개장 업로드</li>
+            <li id="step-indicator-2" class="step-item">② 필드 매핑</li>
+            <li id="step-indicator-3" class="step-item">③ 기초잔액 업로드</li>
+            <li id="step-indicator-4" class="step-item">④ 데이터 검증</li>
+            <li id="step-indicator-5" class="step-item">⑤ 산출물 확인</li>
+            <li id="step-indicator-6" class="step-item">⑥ 이상분개 탐지</li>
+            <li id="step-indicator-7" class="step-item">⑦ 리포트 다운로드</li>
+        </ul>
+        <button class="btn btn-reset" onclick="resetAll()">🔄 처음부터 다시</button>
+    </aside>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- 메인 콘텐츠 -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <main class="main-content">
+
+        <!-- ── Step 1: 분개장 업로드 ─────────────────── -->
+        <section id="step-1" class="step-section active">
+            <h2>① 분개장 업로드</h2>
+            <div class="upload-area" id="journal-upload-area">
+                <div class="upload-icon">📁</div>
+                <p>회사의 분개장 파일을 업로드하세요</p>
+                <p class="upload-hint">Excel (.xlsx, .xls) 또는 CSV 파일</p>
+                <input type="file" id="journal-file-input" 
+                       accept=".xlsx,.xls,.csv" onchange="handleJournalUpload(this)">
+                <label for="journal-file-input" class="btn btn-upload">파일 선택</label>
+            </div>
+            <div id="journal-preview" class="hidden">
+                <div class="info-box success" id="journal-load-info"></div>
+                <div class="collapsible">
+                    <button class="collapsible-header" onclick="toggleCollapsible(this)">
+                        📄 원본 데이터 미리보기 (상위 20건)
+                    </button>
+                    <div class="collapsible-content">
+                        <div class="table-wrapper" id="journal-preview-table"></div>
+                    </div>
+                </div>
+                <div class="collapsible">
+                    <button class="collapsible-header" onclick="toggleCollapsible(this)">
+                        📋 컬럼 목록
+                    </button>
+                    <div class="collapsible-content">
+                        <div class="table-wrapper" id="journal-columns-table"></div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="goToStep(2)">
+                    다음: 필드 매핑으로 →
+                </button>
+            </div>
+        </section>
+
+        <!-- ── Step 2: 필드 매핑 ─────────────────────── -->
+        <section id="step-2" class="step-section">
+            <h2>② 필드 매핑</h2>
+            <div class="info-box info">
+                회사의 컬럼을 분석용 표준 필드에 매핑해주세요. ★ 표시는 필수 항목입니다.
+            </div>
+            <h3>필수 필드 ★</h3>
+            <div class="mapping-grid" id="required-mapping"></div>
+            <h3>선택 필드</h3>
+            <div class="mapping-grid" id="optional-mapping"></div>
+            <div id="mapping-warning" class="info-box warning hidden">
+                필수 필드를 모두 매핑해주세요.
+            </div>
+            <button class="btn btn-primary" onclick="applyMapping()">
+                매핑 적용 및 다음 단계로 →
+            </button>
+        </section>
+
+        <!-- ── Step 3: 기초잔액 업로드 ───────────────── -->
+        <section id="step-3" class="step-section">
+            <h2>③ 기초잔액 업로드 (B/S 계정)</h2>
+            <div class="radio-group">
+                <label class="radio-label">
+                    <input type="radio" name="use-bb" value="yes" checked 
+                           onchange="toggleBBUpload()">
+                    예, 기초잔액 파일이 있습니다
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="use-bb" value="no" 
+                           onchange="toggleBBUpload()">
+                    아니오, 분개장만 분석합니다
+                </label>
+            </div>
+            <div id="bb-upload-section">
+                <div class="upload-area" id="bb-upload-area">
+                    <div class="upload-icon">📁</div>
+                    <p>기초잔액 파일을 업로드하세요</p>
+                    <input type="file" id="bb-file-input" 
+                           accept=".xlsx,.xls,.csv" onchange="handleBBUpload(this)">
+                    <label for="bb-file-input" class="btn btn-upload">파일 선택</label>
+                </div>
+                <div id="bb-preview" class="hidden">
+                    <div class="info-box success" id="bb-load-info"></div>
+                    <h3>기초잔액 필드 매핑</h3>
+                    <div class="mapping-grid" id="bb-mapping"></div>
+                    <button class="btn btn-primary" onclick="applyBBAndCombine()">
+                        기초잔액 적용 및 데이터 통합 →
+                    </button>
+                </div>
+            </div>
+            <div id="bb-skip-section" class="hidden">
+                <button class="btn btn-primary" onclick="skipBBAndCombine()">
+                    기초잔액 없이 계속 →
+                </button>
+            </div>
+        </section>
+
+        <!-- ── Step 4: 데이터 검증 ───────────────────── -->
+        <section id="step-4" class="step-section">
+            <h2>④ 데이터 완전성 검증</h2>
+            <div id="validation-results"></div>
+            <h3>📊 데이터 요약</h3>
+            <div class="metrics-grid" id="data-summary-metrics"></div>
+            <button class="btn btn-primary" onclick="goToStep(5)">
+                다음: 산출물 확인 →
+            </button>
+        </section>
+
+        <!-- ── Step 5: 산출물 확인 ───────────────────── -->
+        <section id="step-5" class="step-section">
+            <h2>⑤ 산출물 확인</h2>
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab(this, 'tab-account')">
+                    📋 계정별 증감표
+                </button>
+                <button class="tab-btn" onclick="switchTab(this, 'tab-monthly')">
+                    📅 월별 증감표
+                </button>
+                <button class="tab-btn" onclick="switchTab(this, 'tab-charts')">
+                    📈 시각화
+                </button>
+                <button class="tab-btn" onclick="switchTab(this, 'tab-ledger')">
+                    📂 가공원장 다운로드
+                </button>
+            </div>
+            <div id="tab-account" class="tab-content active">
+                <h3>계정별 증감표 (전기이월 / 차변 / 대변 / 기말)</h3>
+                <div class="table-wrapper" id="account-summary-table"></div>
+            </div>
+            <div id="tab-monthly" class="tab-content">
+                <h3>월별 증감표</h3>
+                <div class="table-wrapper" id="monthly-summary-table"></div>
+            </div>
+            <div id="tab-charts" class="tab-content">
+                <h3>월별 차변/대변 추이</h3>
+                <div class="chart-container"><canvas id="chart-dc-trend"></canvas></div>
+                <h3>월별 분개 건수</h3>
+                <div class="chart-container"><canvas id="chart-monthly-count"></canvas></div>
+                <h3>계정 대분류별 기말잔액</h3>
+                <div class="chart-container"><canvas id="chart-category"></canvas></div>
+            </div>
+            <div id="tab-ledger" class="tab-content">
+                <h3>📂 가공원장 다운로드</h3>
+                <div class="info-box info">
+                    기초잔액(전기이월) + 당기 분개장이 통합되고,
+                    <strong>차대구분</strong>, <strong>증감</strong>(차변-대변), 
+                    <strong>월</strong> 필드가 추가된 가공원장을 엑셀 파일로 다운로드합니다.
+                </div>
+                <div class="metrics-grid" id="ledger-summary-metrics"></div>
+                <div class="table-wrapper" id="ledger-preview-table"></div>
+                <button class="btn btn-download" onclick="downloadProcessedLedger()">
+                    📥 가공원장 다운로드 (.xlsx)
+                </button>
+                <p class="hint">💡 다운로드된 파일에는 자동필터가 적용되어 있으며, 
+                   전기이월 행은 노란색 배경으로 구분됩니다.</p>
+            </div>
+            <button class="btn btn-primary" onclick="goToStep(6)">
+                다음: 이상분개 탐지 →
+            </button>
+        </section>
+
+        <!-- ── Step 6: 이상분개 탐지 ─────────────────── -->
+        <section id="step-6" class="step-section">
+            <h2>⑥ 이상 분개 탐지 (Journal Entry Testing)</h2>
+            <h3>🔧 테스트 설정</h3>
+            <div class="config-grid">
+                <div class="config-group">
+                    <h4>기본 테스트</h4>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-weekend" checked> 주말/공휴일 분개
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-round" checked> 라운드넘버 분개
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-no-desc" checked> 적요 없는 분개
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-same-pa" checked> 기표자=승인자 분개
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-no-appr" checked> 승인자 없는 분개
+                    </label>
+                </div>
+                <div class="config-group">
+                    <h4>정밀 테스트</h4>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-period" checked> 결산일 전후 분개
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-large" checked> 비정상 대금액 분개
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-combo" checked> 비정상 계정조합
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-reversal" checked> 역분개 의심
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-user"> 특정 사용자 분개
+                    </label>
+                </div>
+            </div>
+            <div class="collapsible">
+                <button class="collapsible-header" onclick="toggleCollapsible(this)">
+                    ⚙️ 상세 설정
+                </button>
+                <div class="collapsible-content">
+                    <div class="setting-row">
+                        <label>라운드넘버 최소 금액 기준:</label>
+                        <input type="number" id="cfg-round-threshold" 
+                               value="10000000" step="1000000">
+                    </div>
+                    <div class="setting-row">
+                        <label>대금액 판정 기준 (평균 + N × 표준편차):</label>
+                        <input type="number" id="cfg-large-std" value="3" min="1" max="5">
+                    </div>
+                    <div class="setting-row">
+                        <label>역분개 탐지 기간 (일):</label>
+                        <input type="number" id="cfg-reversal-days" value="7" min="1" max="30">
+                    </div>
+                    <div id="specific-user-section" class="hidden">
+                        <label>탐지할 사용자 선택:</label>
+                        <div id="user-checkboxes"></div>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-primary btn-full" onclick="runAnomalyDetection()">
+                🔍 이상 분개 탐지 실행
+            </button>
+            <div id="anomaly-results" class="hidden">
+                <h3>📊 탐지 결과 요약</h3>
+                <div class="table-wrapper" id="anomaly-summary-table"></div>
+                <div class="info-box info" id="anomaly-total-info"></div>
+                <h3>📋 테스트별 상세 결과</h3>
+                <div id="anomaly-details"></div>
+            </div>
+        </section>
+
+        <!-- ── Step 7: 리포트 다운로드 ───────────────── -->
+        <section id="step-7" class="step-section">
+            <h2>⑦ 리포트 다운로드</h2>
+            <button class="btn btn-download btn-full" onclick="downloadFullReport()">
+                📥 저널엔트리테스트 전체 결과 다운로드 (.xlsx)
+            </button>
+            <p class="hint">검증결과, 계정별증감표, 월별증감표, 이상분개 요약 및 상세 내역이 
+               모두 포함된 엑셀 파일입니다.</p>
+            <hr>
+            <p class="footer-text">Journal Entry Testing Automation System — v1.0</p>
+            <p class="footer-text">© 2026 회계 밖 세상 (growme.kr)</p>
+        </section>
+
+    </main>
+</div>
+
+<!-- 로딩 오버레이 -->
+<div id="loading-overlay" class="hidden">
+    <div class="loading-spinner">
+        <div class="spinner"></div>
+        <p id="loading-text">처리 중...</p>
+    </div>
+</div>
+
+<!-- JavaScript 모듈 -->
+<script src="js/dataProcessor.js"></script>
+<script src="js/validation.js"></script>
+<script src="js/anomalyDetector.js"></script>
+<script src="js/reportGenerator.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
